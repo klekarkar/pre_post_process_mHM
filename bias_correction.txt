@@ -1,0 +1,62 @@
+
+Bias correction via Empirical Quantile Mapping (EQM, ratio form) with zero-jittering
+for precipitation-like variables.
+
+──────────────────────────────────────────────────────────────────────────────
+                         HIGH-LEVEL WORKFLOW (ASCII)
+──────────────────────────────────────────────────────────────────────────────
+
+  Inputs (xr.DataArray, dims: time, lat, lon)
+  ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+  │   OBS (obs)      │   │  HIST model      │   │   FUT model      │
+  └────────┬─────────┘   └────────┬─────────┘   └────────┬─────────┘
+           │ align time (inner)             │            │ (already on same grid)
+           └──────────────┬─────────────────┘            │
+                          ▼                              │
+                 ┌────────────────────┐                  │
+                 │  obs_a, hist_a     │                  │
+                 └─────────┬──────────┘                  │
+                           │                             │
+                           │ (loop month = 1..12)        │
+                           ▼                             │
+                 For this month, extract obs/hist        │
+                 ┌────────────────────────────────────┐  │
+                 │  o_m = obs_a[month] (t, y, x)      │  │
+                 │  h_m = hist_a[month] (t, y, x)     │  │
+                 └────────────────────────────────────┘  │
+                           │                             │
+                           │ (loop each grid cell i,j)   │
+                           ▼                             │
+              ┌───────────────────────────────────────┐  │
+              │  compute_eqm_mapping(o, h):          │  │
+              │    - jitter zeros in h               │  │
+              │    - get quantiles qh, qo            │  │
+              │    - store mapping[(month,i,j)]      │  │
+              └───────────────────────────────────────┘  │
+                           │                             │
+                           │ After all mappings ready    │
+                           ▼                             ▼
+           ┌──────────────────────────────┐   ┌──────────────────────────────┐
+           │ Apply to HIST[month]:        │   │ Apply to FUT[month]:         │
+           │  - for each cell,            │   │  - for each cell,            │
+           │    interpolate factor        │   │    interpolate factor        │
+           │    af = qo/qh in x-space     │   │    af = qo/qh in x-space     │
+           │  - y = x * af                │   │  - y = x * af                │
+           └──────────────────────────────┘   └──────────────────────────────┘
+                           │                             │
+                           └──────────────┬──────────────┘
+                                          ▼
+                                ┌─────────────────┐
+                                │  Outputs        │
+                                │  hist_bc, fut_bc│
+                                └─────────────────┘
+
+Assumptions & Notes
+- Ratio EQM is appropriate for non-negative skewed variables (e.g., precipitation).
+- Structural zeros are preserved (we only jitter zeros when *training* the mapping).
+- FUT is assumed regridded to the same lat/lon as OBS/HIST before calling this.
+- Quantiles outside the calibrated range use edge factors (left/right extrapolation).
+- This implementation is eager (NumPy). For very large data/dask, vectorize with
+  xarray groupby/apply_ufunc or map_blocks.
+
+──────────────────────────────────────────────────────────────────────────────

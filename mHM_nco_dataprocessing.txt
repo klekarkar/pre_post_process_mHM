@@ -1,0 +1,118 @@
+
+-------------------------------------------------
+CREATE A DOMAIN GRID 
+-------------------------------------------------
+Use remapbil: https://code.mpimet.mpg.de/boards/2/topics/96
+<<<<<<< working_scripts
+To ensure that the origins of the files match the xllcorner and yllcorner values of the morph files,
+Add half a cell size to xll and yll corners so that;
+if yllcorner is 48.5,
+   xllcorner is 2.0,
+   cell size is 0.125,
+then yfirst should be 48.5+0.125/2 = 48.5625 and xfirst = 2.0625
+
+Create an empty grid with the desired dimensions
+cat > domain_grid << EOF
+=======
+To ensure that the origins of the files match the xllcorner and yllcorner values of the morph files, add half a cell size to xll and yll corners so that if yllcorner is 49.5 and xllcorner is 2.5, then yfirst should be 49.5+0.03125/2 = 49.515625 and xfirst = 2.515625.
+
+cat > meteo_domain_grid << EOF
+>>>>>>> main
+The xfirst and yfirst values are grid centres.
+
+gridtype = lonlat
+xsize    = 40
+ysize    = 28
+xfirst   = 2.0625
+xinc     = 0.125
+yfirst   = 48.5625
+yinc     = 0.125
+EOF
+
+#Map the values to the grid
+cdo remapbil,meteo_domain_grid RMI_pre_grid.nc pre_grid.nc
+
+!!!!!!!!!!VERY IMPORTANT!!!!!!!!!!!!!
+cdo setcalendar,gregorian -settaxis,YYYY-MM-MM,00:00:00,1day input/meteo/pre/pre_grid.nc output.nc
+
+----the date represent the first time step of the input data----
+!!!!!!!!!!!!!!!
+
+---------------------------------------------------------------------------------------
+LAI nc File
+---------------------------------------------------------------------------------------
+#LAI file (LO Resolution)
+cat > domain_grid << EOF
+gridtype = lonlat
+xsize    = 2048
+ysize    = 1024
+xfirst   = 2.5009765625
+xinc     = 0.001953125
+yfirst   = 49.5009765625
+yinc     = 0.001953125
+EOF
+
+#Map the values to the grid
+cdo remapbil,lai_domain_grid lai.nc lai_domain.nc
+
+---------------------------------------------------------------------------------------
+
+--------------------------------------------------------------
+#follow these instructions for data preparation:
+https://mhm.pages.ufz.de/mhm/stable/data.html
+--------------------------------------------------------------
+
+nco preprocessing
+ncatted -O -a units,lai,c,c,"m^2/m^2" your_file.nc
+
+ncatted -O -a _FillValue,lai,c,d,-9999.0 your_file.nc
+
+ncatted -O -a units,time,c,c,"days since 1982-01-01" your_file.nc
+
+--------------------------------------------------------------------------------
+
+
+---------------------------------------------------------------------------------
+
+#LAI File
+# Add/modify attributes for 'time'
+ncatted -O -a standard_name,time,c,c,"time" input/lai/lai.nc
+ncatted -O -a long_name,time,c,c,"time" input/lai/lai.nc
+ncatted -O -a units,time,c,c,"months since 1982-01-01" input/lai/lai.nc
+ncatted -O -a calendar,time,c,c,"standard" input/lai/lai.nc
+ncatted -O -a axis,time,c,c,"T" input/lai/lai.nc
+
+#remove eulaVliF
+ncatted -O -a eulaVlliF_,lai,d,, input/lai/lai.nc
+
+
+# Add/modify attributes for 'lon'
+ncatted -O -a standard_name,lon,c,c,"longitude" input/lai/lai.nc
+ncatted -O -a long_name,lon,c,c,"longitude" input/lai/lai.nc
+ncatted -O -a units,lon,c,c,"degrees_east" input/lai/lai.nc
+ncatted -O -a axis,lon,c,c,"X" input/lai/lai.nc
+
+# Add/modify attributes for 'lat'
+ncatted -O -a standard_name,lat,c,c,"latitude" input/lai/lai.nc
+ncatted -O -a long_name,lat,c,c,"latitude" input/lai/lai.nc
+ncatted -O -a units,lat,c,c,"degrees_north" input/lai/lai.nc
+ncatted -O -a axis,lat,c,c,"Y" input/lai/lai.nc
+
+# Set '_FillValue' and 'missing_value' for 'lai'
+ncatted -O -a _FillValue,lai,c,d,-9999 input/lai/lai.nc
+ncatted -O -a missing_value,lai,c,d,-9999 input/lai/lai.nc
+
+#same for pre and pet
+
+-------------------------
+//// Not sure about this step atm
+For meteo values outside DEM domain, set no data values to 0
+-------------------------
+cdo setmisstoc,0 pre.nc pre_0.nc
+
+# Correct latitude ordering if needed
+
+echo "Correcting latitude orientation..."
+cdo invertlat lai_regridded.nc lai_domain.nc
+
+
