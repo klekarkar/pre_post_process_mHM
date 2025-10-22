@@ -24,7 +24,40 @@ from scipy import stats
 #segoe UI
 plt.rcParams['font.family'] = 'Segoe UI'
 #////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#clip to region
+from shapely.geometry import mapping
+def clip_to_region(shapefile, xr_dataset):
+    """
+    This function clips an xarray dataset to a given shapefile.
 
+    Parameters
+    ----------
+    shapefile : geopandas.GeoDataFrame
+        The shapefile to clip the dataset to.
+    xr_dataset : xarray.Dataset
+        The dataset to clip.
+
+    Returns
+    -------
+    xarray.Dataset
+        The clipped dataset.
+    """
+        #set shapefile to crs 4326
+    shapefile = shapefile.to_crs('epsg:4326')
+
+    #drop bnds dimension
+    xr_dataset = xr_dataset.drop_dims("bnds", errors="ignore")
+
+    #set spatial dimensions
+    xr_dataset.rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)
+
+    #write crs
+    xr_dataset.rio.write_crs('epsg:4326', inplace=True)
+
+    #clip
+    clipped = xr_dataset.rio.clip(shapefile.geometry.apply(mapping), shapefile.crs, drop=True)
+
+    return clipped
 
 ##function to match frequency and resample to desired frequency
 def match_frequency_and_resample(q_model: pd.Series, q_obs: pd.Series, obs_freq: str, resample_freq: str, station_id: str):
