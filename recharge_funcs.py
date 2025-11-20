@@ -660,6 +660,7 @@ def df_to_gdf(df, stations_df):
 
     #only unique station names
     station_locations_df = stations_df.drop_duplicates(subset='name').set_index('name')
+    df = df.set_index('name')
 
     #merge station_locations with df on 'name'
     ensemble_stations = pd.concat([station_locations_df, df], axis=1).dropna()
@@ -730,93 +731,147 @@ def wilcoxon_stats(ens_BFI):
 
 #===========================================================================================
 #### Map the BFI and KGE values
-def map_BFI_anomalies(bfi_gdf, boundaries_shp, streams_shp, m_diff, p_w):
+def map_BFI(bfi_gdf, name, boundaries_shp, streams_shp, cmap='coolwarm',
+            inset_val=0, m_diff=None, p_w=None):
+    """
+    Map differences between observed and simulated BFI per station over the domain,
+    including river network, plus an inset histogram of the error distribution.
 
-    """ 
-    Map differences between obs. and sim. BFI per station overlain over a map and river network
-    ------
-    Parameters:
-    bfi_gdf:
-    Geodataframe containing obs-sim BFI, station names and coordinates
-    boundaries_shp:  
-    Boundary of domain
-    streams_shp:
-    river network
-    m_diff, p_w: 
-    wilcoxon stats above
+    Parameters
+    ----------
+    bfi_gdf : geopandas.GeoDataFrame
+        GeoDataFrame containing BFI differences, station names and coordinates.
+        The column `name` should contain BFI_sim - BFI_obs.
+    name : str
+        Name of the GeoDataFrame column to be mapped (BFI_sim - BFI_obs).
+    boundaries_shp : geopandas.GeoDataFrame
+        Boundary polygon(s) of the domain.
+    streams_shp : geopandas.GeoDataFrame
+        River network.
+    cmap : str or Colormap
+        Colormap name (or Colormap object) to use.
+    inset_val : float, optional
+        Reference x-value for vertical line in inset (e.g. 0).
+    m_diff : float, optional
+        Mean BFI difference to display in the inset.
+    p_w : float, optional
+        P-value to display in the inset.
 
-    -----
-    Returns:
-    map of sim-obs. BFI per station and histogram of error distribution
-    
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure object.
+    ax : matplotlib.axes.Axes
+        Main map axis (PlateCarree projection).
+    cbar : matplotlib.colorbar.Colorbar
+        Colorbar object.
     """
 
-    fig, ax = plt.subplots(figsize=(15, 7), subplot_kw={'projection': ccrs.PlateCarree()}, dpi=150)
+    fig, ax = plt.subplots(
+        figsize=(15, 7),
+        subplot_kw={'projection': ccrs.PlateCarree()},
+        dpi=150
+    )
 
-    boundaries_shp.plot(ax=ax, linewidth=0.5,
-                edgecolor='black', facecolor='none', zorder=1, transform=ccrs.PlateCarree())
+    # Plot domain boundary and river network
+    boundaries_shp.plot(
+        ax=ax, linewidth=0.5, edgecolor='black', facecolor='none',
+        zorder=1, transform=ccrs.PlateCarree()
+    )
 
-    streams_shp.plot(ax=ax, linewidth=0.5, alpha=0.2,
-                    edgecolor='dodgerblue', facecolor='none', zorder=2, transform=ccrs.PlateCarree())
+    streams_shp.plot(
+        ax=ax, linewidth=0.5, alpha=0.2,
+        edgecolor='dodgerblue', facecolor='none',
+        zorder=2, transform=ccrs.PlateCarree()
+    )
 
+    map_var = bfi_gdf[name].to_numpy()
 
-    diff = bfi_gdf['bfi_diff'].to_numpy()
+    # Colormap handling
+    if isinstance(cmap, str):
+        cmap = mpl.colormaps[cmap]
 
-    # color: diverging, centered at 0
-    vmax = np.nanpercentile(np.abs(diff), 99)  # robust limits
-    norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
-    cmap = 'coolwarm'  # blue = negative, red = positive (reverse if you prefer)
+    var_min = np.nanmin(map_var)
+    var_max = np.nanmax(map_var)
 
-    # size: scale |diff| to [smin, smax]
-    mag = np.abs(diff)
-    smin, smax = 30, 300
-    sizes = np.interp(mag, [mag.min(), mag.max()], [smin, smax])
+    # Diverging if both negative and positive values exist
+    if var_min < 0 and var_max > 0:
+        vmax = np.nanpercentile(np.abs(map_var), 99)
+        vmin = -vmax
+        norm = TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
+    else:
+        vmin, vmax = var_min, var_max
+        if vmin == vmax:  # avoid zero range
+            vmin -= 1e-6
+            vmax += 1e-6
+        norm = Normalize(vmin=vmin, vmax=vmax)
 
+    # Marker size (constant for now)
+    sizes = 70
 
     sc = ax.scatter(
         bfi_gdf.geometry.x, bfi_gdf.geometry.y,
-        c=diff,
-        s=50,
+        c=map_var,
+        s=sizes,
         cmap=cmap,
+        norm=norm,
         edgecolor='white',
         linewidth=0.5,
         transform=ccrs.PlateCarree(),
         zorder=3,
     )
 
+    ax.set_title('(c)', weight='bold', fontsize=16)
+
+    # Gridlines and labels
     gl = ax.gridlines(draw_labels=True, color='gray', lw=0.6, alpha=0.2)
-    gl.xlocator = plt.FixedLocator(np.arange(0, 10, 1))
-    gl.ylocator = plt.FixedLocator(np.arange(49.5, 51.9, 0.4))
+    gl.xlocator = FixedLocator(np.arange(0, 10, 1))
+    gl.ylocator = FixedLocator(np.arange(49.5, 51.9, 0.4))
     gl.top_labels = True
+    gl.bottom_labels = False
     gl.right_labels = False
+    gl.xlabel_style = {'size': 14, 'color': 'gray'}
+    gl.ylabel_style = {'size': 14, 'color': 'gray'}
 
-    #Insert inset histogram of BFI values
-    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-    ax_in = inset_axes(ax, width="30%", height="25%", bbox_to_anchor=(-.60, -.62, 1.0, 1.0), bbox_transform=ax.transAxes)
-    ax_in.axvline(0, linewidth=1, color='red')
-    ax_in.axvline(m_diff, linestyle='--')
-    #ax_in.axvspan(lo_diff, hi_diff, alpha=0.2)
-    ax_in.text(0.6, 0.95, f'mean={m_diff:.02f},  \np={p_w:.3f}',
-            transform=ax_in.transAxes, va='top', fontsize=7)
-    cm = mpl.colormaps[cmap]
-    _, bins, patches = ax_in.hist(diff, bins=20, color="r")  # Corrected axis
-    bin_centers = 0.5*(bins[:-1]+bins[1:])
-    col = bin_centers - min(bin_centers)
-    if np.max(col) > 0:
-        col /= np.max(col)
+    # Inset histogram of BFI differences
+    ax_in = inset_axes(
+        ax, width="32%", height="25%",
+        bbox_to_anchor=(-0.57, -0.62, 1.0, 1.0),
+        bbox_transform=ax.transAxes
+    )
 
-    for c, p in zip(col, patches):
-        plt.setp(p, "facecolor", cm(c))
-        edgecolor = 'gray'
-        lwidth = 0.4
-        plt.setp(p, "edgecolor", edgecolor, "linewidth", lwidth)
-    ax_in.set_xlabel(r'$BFI_{sim} - BFI_{obs}$', fontsize=9)
-    ax_in.set_ylabel('Stations', fontsize=9)
-    ax_in.tick_params(labelsize=9)
+    ax_in.axvline(inset_val, linewidth=1, color='red')
 
-    cax = fig.add_axes([0.291, 0.02, 0.44, 0.04]) #left, bottom, width, height
-    cmap = plt.get_cmap(cmap)
+    if m_diff is not None:
+        ax_in.axvline(m_diff, linestyle='--')
+        text = r'$\mu$={:.2f}'.format(m_diff)
+        # if p_w is not None:
+        #     text += r', $p$={:.3f}'.format(p_w)
+        ax_in.text(
+            0.7, 0.90, text,
+            transform=ax_in.transAxes, va='top', ha='center', fontsize=13
+        )
 
-    cbar = plt.colorbar(ScalarMappable(norm=norm, cmap=cmap), cax=cax, orientation='horizontal')
-    cbar.ax.tick_params(labelsize=10)
-    cbar.set_label('BFI Difference', fontsize=10, weight='bold')
+    # Histogram colored according to colormap
+    _, bins, patches = ax_in.hist(map_var, bins=20)
+    bin_centers = 0.5 * (bins[:-1] + bins[1:])
+    col = bin_centers - np.nanmin(bin_centers)
+    if np.nanmax(col) > 0:
+        col /= np.nanmax(col)
+
+    for c_value, p in zip(col, patches):
+        plt.setp(p, "facecolor", cmap(c_value))
+        plt.setp(p, "edgecolor", 'gray', "linewidth", 0.4)
+
+    ax_in.set_ylabel('Stations', fontsize=13)
+    ax_in.tick_params(labelsize=13)
+
+    # Colorbar
+    cax = fig.add_axes([0.291, 0.02, 0.44, 0.04])  # left, bottom, width, height
+    cbar = plt.colorbar(
+        ScalarMappable(norm=norm, cmap=cmap), cax=cax, orientation='horizontal'
+    )
+    cbar.ax.tick_params(labelsize=14)
+    
+
+    return fig, ax_in, cbar
