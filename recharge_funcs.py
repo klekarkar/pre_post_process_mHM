@@ -17,8 +17,11 @@ import baseflow #this is the baseflow package
 import sys
 from pathlib import Path
 import matplotlib as mpl
+from matplotlib.colors import Normalize
+from matplotlib.ticker import FixedLocator
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import TwoSlopeNorm
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import geopandas as gpd
 from scipy import stats
 #segoe UI
@@ -672,7 +675,7 @@ def df_to_gdf(df, stations_df):
     return gdf_
 
 #========================================================================
-def ensemble_BFI_to_geodataframe(ensemble_BFI_df, obs_BFI_df, stations_df):
+def ensemble_BFI_to_geodataframe(ensemble_BFI_df, obs_BFI_df, stations_df=None):
         """  
         Merge ensemble of station geodataframes with station files to get a gdf to map
 
@@ -694,6 +697,7 @@ def ensemble_BFI_to_geodataframe(ensemble_BFI_df, obs_BFI_df, stations_df):
         #merge with observed BFI
         merged_BFI = pd.concat([ensemble_BFI_df.set_index('name'), obs_BFI_df[['name','obs_bfi']].set_index('name')], axis=1)
         merged_BFI['bfi_diff'] = merged_BFI['ens_BFI'] - merged_BFI['obs_bfi']
+        merged_BFI = merged_BFI.reset_index()
 
         #Merge with stations and convert to gdf
         bfi_diff_gdf = df_to_gdf(merged_BFI, stations_df)
